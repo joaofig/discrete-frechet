@@ -1,3 +1,7 @@
 #discrete-frechet
-An implementation of the discrete Fréchet distance for poly-lines.
+A dive into the discrete Fréchet distance calculation, from the naïve
+approach to high-speed optimizations.
+
+The discrete Fréchet distance measures the similarity between two 
+polygonal curves or poly-lines. 
 

@@ -14,7 +14,8 @@ class Frechet(object):
         arrays containing the point coordinates (x, y), (lat, long)
         """
         self.dist_func = dist_func
-        self.ca = np.array([0])
+        self.ca = np.array([0.0])
+        self.dist = np.array([0.0])
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
         """
@@ -35,7 +36,7 @@ class Frechet(object):
             if self.ca[i, j] > -1.0:
                 return self.ca[i, j]
 
-            d = self.dist_func(p[i], q[j])
+            d = self.dist[i, j]
             if i == 0 and j == 0:
                 self.ca[i, j] = d
             elif i > 0 and j == 0:
@@ -54,12 +55,29 @@ class Frechet(object):
         n_q = q.shape[0]
         self.ca = np.zeros((n_p, n_q))
         self.ca.fill(-1.0)
+        self.dist = self.dist_func(p, q)
         return calculate(n_p - 1, n_q - 1)
-    
+
 
 def euclidean(p: np.ndarray, q: np.ndarray) -> float:
     d = p - q
     return math.sqrt(np.dot(d, d))
+
+
+def np_euclidean(p: np.ndarray, q: np.ndarray) -> np.ndarray:
+    """
+    Calculates the point-to-point distance between poly-lines p and q
+    :param p: Poly-line p
+    :param q: Poly-line q
+    :return: Distance array
+    """
+    n_p = p.shape[0]
+    n_q = q.shape[0]
+    pp = np.repeat(p, n_q, axis=0)
+    qq = np.tile(q, (n_p, 1))
+    dd = pp - qq
+    dist = np.sqrt(dd[:, 0] ** 2 + dd[:, 1] ** 2).reshape(n_p, n_q)
+    return dist
 
 
 def haversine(p: np.ndarray,
