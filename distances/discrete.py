@@ -60,6 +60,17 @@ class NaiveFrechet(object):
         return calculate(n_p - 1, n_q - 1)
 
 
+@jit(nopython=True)
+def distance_matrix(p: np.ndarray, q: np.ndarray, dist_func) -> np.ndarray:
+    n_p = p.shape[0]
+    n_q = q.shape[0]
+    dist = np.zeros((n_p, n_q), dtype=np.float64)
+    for i in range(n_p):
+        for j in range(n_q):
+            dist[i, j] = dist_func(p[i], q[j])
+    return dist
+
+
 class VectorizedNaiveFrechet(NaiveFrechet):
 
     def __init__(self, dist_func):
@@ -104,27 +115,8 @@ class VectorizedNaiveFrechet(NaiveFrechet):
         n_q = q.shape[0]
         self.ca = np.zeros((n_p, n_q))
         self.ca.fill(-1.0)
-        self.dist = self.dist_func(p, q)
+        self.dist = distance_matrix(p, q, dist_func=self.dist_func)
         return calculate(n_p - 1, n_q - 1)
-
-
-def get_min(dist: np.ndarray, i: int, j: int) -> float:
-    if i == 0 and j == 0:
-        a = np.array([dist[i, j]])
-    elif i == 0:
-        a = np.array([dist[i, j-1]])
-    elif j == 0:
-        a = np.array([dist[i-1, j]])
-    else:
-        a = np.array([dist[i-1, j-1], dist[i, j-1], dist[i-1, j]])
-        np.place(a, a == -1, np.inf)
-    return a.min()
-
-
-@jit(nopython=True)
-def point_euclidean(p: np.ndarray, q: np.ndarray) -> float:
-    d = p - q
-    return math.sqrt(np.dot(d, d))
 
 
 @jit(nopython=True)
@@ -189,6 +181,100 @@ def pairwise_distance(p: np.ndarray, q: np.ndarray,
     return dist
 
 
+@jit(nopython=True)
+def fast_distance_matrix(p: np.ndarray,
+                         q: np.ndarray,
+                         dist_func) -> (np.ndarray, np.ndarray):
+    n_p = p.shape[0]
+    n_q = q.shape[0]
+    bp = bresenham_pairs(0, 0, n_p, n_q)
+    n_bp = bp.shape[0]
+
+    epq = np.zeros(n_bp)
+    for i in range(n_bp):
+        epq[i] = dist_func(p[bp[i, 0]], q[bp[i, 1]])
+    diag_max = epq.max()
+
+    # Create the distance array
+    dist = np.zeros((n_p, n_q), dtype=np.float64)
+    dist.fill(-1.0)
+
+    # Fill in the diagonal with the seed distance values
+    for i in range(bp.shape[0]):
+        dist[bp[i][0], bp[i][1]] = epq[i]
+
+    for k in range(n_bp - 1):
+        ij = bp[k]
+        i0 = ij[0]
+        j0 = ij[1]
+
+        for i in range(i0 + 1, n_p):
+            if dist[i, j0] == -1:
+                d = dist_func(p[i], q[j0])
+                if d < diag_max:
+                    dist[i, j0] = d
+                else:
+                    break
+
+        for j in range(j0 + 1, n_q):
+            if dist[i0, j] == -1:
+                d = dist_func(p[i0], q[j])
+                if d < diag_max:
+                    dist[i0, j] = d
+                else:
+                    break
+    return dist, bp
+
+
+@jit(nopython=True)
+def get_corner_min(dist: np.ndarray, i: int, j: int) -> float:
+    if i == 0 and j == 0:
+        a = np.array([dist[i, j]])
+    elif i == 0:
+        a = np.array([dist[i, j-1]])
+    elif j == 0:
+        a = np.array([dist[i-1, j]])
+    else:
+        a = np.array([dist[i-1, j-1], dist[i, j-1], dist[i-1, j]])
+
+        # Replace np.place(a, a == -1, np.inf)
+        for i in range(a.shape[0]):
+            if a[i] == -1:
+                a[i] = np.inf
+    return a.min()
+
+
+@jit(nopython=True)
+def fast_frechet_matrix(dist: np.ndarray,
+                        bp: np.ndarray,
+                        p: np.ndarray,
+                        q: np.ndarray) -> np.ndarray:
+    f = dist.copy()
+
+    n_p = p.shape[0]
+    n_q = q.shape[0]
+
+    for k in range(bp.shape[0]):
+        ij = bp[k]
+        i0 = ij[0]
+        j0 = ij[1]
+
+        for i in range(i0, n_p):
+            d = dist[i, j0]
+            if d != -1:
+                f[i, j0] = max(d, get_corner_min(f, i, j0))
+            else:
+                break
+
+        for j in range(j0, n_q):
+            d = dist[i0, j]
+            if d != -1:
+                f[i0, j] = max(d, get_corner_min(f, i0, j))
+            else:
+                break
+    return f
+
+
 class FastFrechet(object):
 
     def __init__(self, dist_func):
@@ -202,42 +288,16 @@ class FastFrechet(object):
         self.ca = np.array([0.0])
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
-        n_p = p.shape[0]
-        n_q = q.shape[0]
-        bp = bresenham_pairs(0, 0, n_p, n_q)
-        diag = [(e[0], e[1]) for e in bp]
-        epq = self.dist_func(p[bp[:, 0]], q[bp[:, 1]])
-        diag_max = epq.max()
+        self.ca, bp = fast_distance_matrix(p, q, self.dist_func)
+        f = fast_frechet_matrix(self.ca, bp, p, q)
+        self.f = f
+        return f[p.shape[0]-1, q.shape[0]-1]
 
-        # Create the distance array
-        dist = np.zeros((n_p, n_q))
-        dist.fill(-1.0)
 
-        # Fill in the diagonal with the seed distance values
-        for i in range(bp.shape[0]):
-            dist[bp[i][0], bp[i][1]] = epq[i]
-
-        for k in range(bp.shape[0] - 1):
-            ij = bp[k]
-            i0 = ij[0]
-            j0 = ij[1]
-
-            for i in range(i0 + 1, n_p):
-                if dist[i, j0] == -1:
-                    d = point_euclidean(p[i], q[j0])
-                    if d < diag_max:
-                        dist[i, j0] = d
-                    else:
-                        break
-
-            for j in range(j0 + 1, n_q):
-                if dist[i0, j] == -1:
-                    d = point_euclidean(p[i0], q[j])
-                    if d < diag_max:
-                        dist[i0, j] = d
-                    else:
-                        break
-        return 0.0
+@jit(nopython=True)
+def euclidean(p: np.ndarray, q: np.ndarray) -> float:
+    d = p - q
+    return math.sqrt(d[0] ** 2 + d[1] ** 2)
 
 
 def pairwise_euclidean(p: np.ndarray, q: np.ndarray) -> np.ndarray:
@@ -288,15 +348,28 @@ def haversine(p: np.ndarray,
 
 
 def main():
-    pass
-    # frechet = NaiveFrechet(euclidean)
-    # p = np.array([[0.0, 0.0],
-    #               [1.0, 0.0]])
-    # q = np.array([[0.0, 1.0],
-    #               [1.0, 1.0],
-    #               [1.0, 2.0]])
-    # print(frechet.distance(p, q))
-    # print(frechet.ca)
+    np.set_printoptions(precision=4)
+
+    frechet = FastFrechet(euclidean)
+    p = np.array([[0.2, 2.0],
+                  [1.5, 2.8],
+                  [2.3, 1.6],
+                  [2.9, 1.8],
+                  [4.1, 3.1],
+                  [5.6, 2.9],
+                  [7.2, 1.3],
+                  [8.2, 1.1]])
+    q = np.array([[0.3, 1.6],
+                  [3.2, 3.0],
+                  [3.8, 1.8],
+                  [5.2, 3.1],
+                  [6.5, 2.8],
+                  [7.0, 0.8],
+                  [8.9, 0.6]])
+    print(frechet.distance(p, q))
+
+    print(frechet.ca)
+    print(frechet.f)
 
 
 if __name__ == "__main__":
