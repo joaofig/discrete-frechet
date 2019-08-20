@@ -300,27 +300,6 @@ def euclidean(p: np.ndarray, q: np.ndarray) -> float:
     return math.sqrt(d[0] ** 2 + d[1] ** 2)
 
 
-def pairwise_euclidean(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    d = p - q
-    return np.sqrt(d[:, 0] ** 2 + d[:, 1] ** 2)
-
-
-def vector_euclidean(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    """
-    Calculates the point-to-point distance between poly-lines p and q
-    :param p: Poly-line p
-    :param q: Poly-line q
-    :return: Distance array
-    """
-    n_p = p.shape[0]
-    n_q = q.shape[0]
-    pp = np.repeat(p, n_q, axis=0)
-    qq = np.tile(q, (n_p, 1))
-    dd = pp - qq
-    dist = np.sqrt(dd[:, 0] ** 2 + dd[:, 1] ** 2).reshape(n_p, n_q)
-    return dist
-
-
 def haversine(p: np.ndarray,
               q: np.ndarray) -> float:
     """
