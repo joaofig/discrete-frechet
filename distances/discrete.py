@@ -300,6 +300,7 @@ def euclidean(p: np.ndarray, q: np.ndarray) -> float:
     return math.sqrt(d[0] ** 2 + d[1] ** 2)
 
 
+@jit(nopython=True)
 def haversine(p: np.ndarray,
               q: np.ndarray) -> float:
     """
