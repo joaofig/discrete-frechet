@@ -1,7 +1,23 @@
 import numpy as np
 import math
 
+from typing import Callable
 from numba import jit
+#
+#
+# class SparseArray(object):
+#
+#     def __init__(self):
+#         self.array = dict()
+#
+#     def __setitem__(self, key, value):
+#         self.array[key] = value
+#
+#     def __getitem__(self, item):
+#         return self.array[item]
+#
+#     def __contains__(self, item):
+#         return item in self.array
 
 
 class NaiveFrechet(object):
@@ -61,7 +77,9 @@ class NaiveFrechet(object):
 
 
 @jit(nopython=True)
-def distance_matrix(p: np.ndarray, q: np.ndarray, dist_func) -> np.ndarray:
+def distance_matrix(p: np.ndarray,
+                    q: np.ndarray,
+                    dist_func: Callable) -> np.ndarray:
     n_p = p.shape[0]
     n_q = q.shape[0]
     dist = np.zeros((n_p, n_q), dtype=np.float64)
@@ -172,8 +190,10 @@ def bresenham_pairs(x0: int, y0: int,
 
 
 @jit(nopython=True)
-def pairwise_distance(p: np.ndarray, q: np.ndarray,
-                      bp: np.ndarray, dist_func) -> np.ndarray:
+def pairwise_distance(p: np.ndarray,
+                      q: np.ndarray,
+                      bp: np.ndarray,
+                      dist_func: Callable) -> np.ndarray:
     n = bp.shape[0]
     dist = np.zeros(n)
     for i in range(n):
@@ -184,7 +204,7 @@ def pairwise_distance(p: np.ndarray, q: np.ndarray,
 @jit(nopython=True)
 def fast_distance_matrix(p: np.ndarray,
                          q: np.ndarray,
-                         dist_func) -> (np.ndarray, np.ndarray):
+                         dist_func: Callable) -> (np.ndarray, np.ndarray):
     n_p = p.shape[0]
     n_q = q.shape[0]
     bp = bresenham_pairs(0, 0, n_p, n_q)
@@ -286,6 +306,7 @@ class FastFrechet(object):
         """
         self.dist_func = dist_func
         self.ca = np.array([0.0])
+        self.f = np.array([0.0])
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
         self.ca, bp = fast_distance_matrix(p, q, self.dist_func)
