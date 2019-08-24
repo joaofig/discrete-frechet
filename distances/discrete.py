@@ -79,7 +79,8 @@ class NaiveFrechet(object):
 @jit(nopython=True)
 def distance_matrix(p: np.ndarray,
                     q: np.ndarray,
-                    dist_func: Callable) -> np.ndarray:
+                    dist_func: Callable[[np.array, np.array], float]) \
+        -> np.ndarray:
     n_p = p.shape[0]
     n_q = q.shape[0]
     dist = np.zeros((n_p, n_q), dtype=np.float64)
@@ -193,7 +194,8 @@ def bresenham_pairs(x0: int, y0: int,
 def pairwise_distance(p: np.ndarray,
                       q: np.ndarray,
                       bp: np.ndarray,
-                      dist_func: Callable) -> np.ndarray:
+                      dist_func: Callable[[np.array, np.array], float]) \
+        -> np.ndarray:
     n = bp.shape[0]
     dist = np.zeros(n)
     for i in range(n):
@@ -204,7 +206,8 @@ def pairwise_distance(p: np.ndarray,
 @jit(nopython=True)
 def fast_distance_matrix(p: np.ndarray,
                          q: np.ndarray,
-                         dist_func: Callable) -> (np.ndarray, np.ndarray):
+                         dist_func: Callable[[np.array, np.array], float]) \
+        -> (np.ndarray, np.ndarray):
     n_p = p.shape[0]
     n_q = q.shape[0]
     bp = bresenham_pairs(0, 0, n_p, n_q)
