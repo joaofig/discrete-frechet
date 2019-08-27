@@ -52,8 +52,10 @@ class NaiveFrechet(object):
             :return: Distance value
             """
             if self.ca[i, j] > -1.0:
+                # print(i, j, "*")
                 return self.ca[i, j]
 
+            # print(i, j)
             d = self.dist_func(p[i], q[j])
             if i == 0 and j == 0:
                 self.ca[i, j] = d
@@ -74,6 +76,45 @@ class NaiveFrechet(object):
         self.ca = np.zeros((n_p, n_q))
         self.ca.fill(-1.0)
         return calculate(n_p - 1, n_q - 1)
+
+
+@jit(nopython=True)
+def get_linear_frechet(p: np.ndarray, q: np.ndarray,
+                       dist_func: Callable[[np.ndarray, np.ndarray], float]) \
+        -> np.ndarray:
+    n_p = p.shape[0]
+    n_q = q.shape[0]
+    ca = np.zeros((n_p, n_q), dtype=np.float64)
+
+    for i in range(n_p):
+        for j in range(n_q):
+            d = dist_func(p[i], q[j])
+
+            if i > 0 and j > 0:
+                ca[i, j] = max(min(ca[i - 1, j],
+                                   ca[i - 1, j - 1],
+                                   ca[i, j - 1]), d)
+            elif i > 0 and j == 0:
+                ca[i, j] = max(ca[i - 1, 0], d)
+            elif i == 0 and j > 0:
+                ca[i, j] = max(ca[0, j - 1], d)
+            elif i == 0 and j == 0:
+                ca[i, j] = d
+            else:
+                ca[i, j] = np.infty
+    return ca
+
+
+class LinearFrechet(NaiveFrechet):
+
+    def __init__(self, dist_func):
+        NaiveFrechet.__init__(self, dist_func)
+
+    def distance(self, p: np.ndarray, q: np.ndarray) -> float:
+        n_p = p.shape[0]
+        n_q = q.shape[0]
+        self.ca = get_linear_frechet(p, q, self.dist_func)
+        return self.ca[n_p - 1, n_q - 1]
 
 
 @jit(nopython=True)
