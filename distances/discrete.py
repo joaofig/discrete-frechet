@@ -1,23 +1,9 @@
 import numpy as np
 import math
 
-from typing import Callable
-from numba import jit
-#
-#
-# class SparseArray(object):
-#
-#     def __init__(self):
-#         self.array = dict()
-#
-#     def __setitem__(self, key, value):
-#         self.array[key] = value
-#
-#     def __getitem__(self, item):
-#         return self.array[item]
-#
-#     def __contains__(self, item):
-#         return item in self.array
+from typing import Callable, Dict
+from numba import jit, types
+from numba import typed
 
 
 class NaiveFrechet(object):
@@ -245,10 +231,26 @@ def pairwise_distance(p: np.ndarray,
 
 
 @jit(nopython=True)
+def rc(row: types.int64, col: types.int64) -> types.int64:
+    return (row << 32) + col
+
+
+@jit(nopython=True)
+def get_rc(a: Dict, row: types.int64, col: types.int64,
+           d: types.float64 = np.inf) -> types.float64:
+    kk = rc(row, col)
+    if kk in a:
+        return a[kk]
+    else:
+        return d
+
+
+@jit(nopython=True)
 def fast_distance_matrix(p: np.ndarray,
                          q: np.ndarray,
-                         dist_func: Callable[[np.array, np.array], float]) \
-        -> (np.ndarray, np.ndarray):
+                         dist_func: Callable[[np.array, np.array], float]):
+    # \
+    #     -> (types.DictType, np.ndarray):
     n_p = p.shape[0]
     n_q = q.shape[0]
     bp = bresenham_pairs(0, 0, n_p, n_q)
@@ -260,12 +262,13 @@ def fast_distance_matrix(p: np.ndarray,
     diag_max = epq.max()
 
     # Create the distance array
-    dist = np.zeros((n_p, n_q), dtype=np.float64)
-    dist.fill(-1.0)
+    # dist = np.zeros((n_p, n_q), dtype=np.float64)
+    # dist.fill(-1.0)
+    dist = typed.Dict.empty(key_type=types.int64, value_type=types.float64)
 
     # Fill in the diagonal with the seed distance values
     for i in range(bp.shape[0]):
-        dist[bp[i][0], bp[i][1]] = epq[i]
+        dist[rc(bp[i][0], bp[i][1])] = epq[i]
 
     for k in range(n_bp - 1):
         ij = bp[k]
@@ -273,33 +276,36 @@ def fast_distance_matrix(p: np.ndarray,
         j0 = ij[1]
 
         for i in range(i0 + 1, n_p):
-            if dist[i, j0] == -1:
+            kk = rc(i, j0)
+            if kk not in dist:
                 d = dist_func(p[i], q[j0])
                 if d < diag_max:
-                    dist[i, j0] = d
+                    dist[kk] = d
                 else:
                     break
 
         for j in range(j0 + 1, n_q):
-            if dist[i0, j] == -1:
+            kk = rc(i0, j)
+            if kk not in dist:
                 d = dist_func(p[i0], q[j])
                 if d < diag_max:
-                    dist[i0, j] = d
+                    dist[kk] = d
                 else:
                     break
     return dist, bp
 
 
 @jit(nopython=True)
-def get_corner_min(dist: np.ndarray, i: int, j: int) -> float:
+def get_corner_min(dist, i: int, j: int) -> float:
     if i == 0 and j == 0:
-        a = np.array([dist[i, j]])
+        a = np.array([get_rc(dist, i, j)])
     elif i == 0:
-        a = np.array([dist[i, j-1]])
+        a = np.array([get_rc(dist, i, j-1)])
     elif j == 0:
-        a = np.array([dist[i-1, j]])
+        a = np.array([get_rc(dist, i-1, j)])
     else:
-        a = np.array([dist[i-1, j-1], dist[i, j-1], dist[i-1, j]])
+        a = np.array([get_rc(dist, i-1, j-1), get_rc(dist, i, j-1),
+                      get_rc(dist, i-1, j)])
 
         # Replace np.place(a, a == -1, np.inf)
         for i in range(a.shape[0]):
@@ -309,11 +315,13 @@ def get_corner_min(dist: np.ndarray, i: int, j: int) -> float:
 
 
 @jit(nopython=True)
-def fast_frechet_matrix(dist: np.ndarray,
+def fast_frechet_matrix(dist,
                         bp: np.ndarray,
                         p: np.ndarray,
-                        q: np.ndarray) -> np.ndarray:
-    f = dist.copy()
+                        q: np.ndarray):
+    f = typed.Dict.empty(key_type=types.int64, value_type=types.float64)
+    for key, value in dist.items():
+        f[key] = value
 
     n_p = p.shape[0]
     n_q = q.shape[0]
@@ -324,16 +332,18 @@ def fast_frechet_matrix(dist: np.ndarray,
         j0 = ij[1]
 
         for i in range(i0, n_p):
-            d = dist[i, j0]
-            if d != -1:
-                f[i, j0] = max(d, get_corner_min(f, i, j0))
+            kk = rc(i, j0)
+            if kk in dist:
+                d = dist[kk]
+                f[kk] = max(d, get_corner_min(f, i, j0))
             else:
                 break
 
         for j in range(j0, n_q):
-            d = dist[i0, j]
-            if d != -1:
-                f[i0, j] = max(d, get_corner_min(f, i0, j))
+            kk = rc(i0, j)
+            if kk in dist:
+                d = dist[kk]
+                f[kk] = max(d, get_corner_min(f, i0, j))
             else:
                 break
     return f
@@ -349,14 +359,16 @@ class FastFrechet(object):
         dist_func:
         """
         self.dist_func = dist_func
-        self.ca = np.array([0.0])
-        self.f = np.array([0.0])
+        self.ca = typed.Dict.empty(key_type=types.int64,
+                                   value_type=types.float64)
+        self.f = typed.Dict.empty(key_type=types.int64,
+                                  value_type=types.float64)
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
-        self.ca, bp = fast_distance_matrix(p, q, self.dist_func)
-        f = fast_frechet_matrix(self.ca, bp, p, q)
-        self.f = f
-        return f[p.shape[0]-1, q.shape[0]-1]
+        ca, bp = fast_distance_matrix(p, q, self.dist_func)
+        f = fast_frechet_matrix(ca, bp, p, q)
+        self.f, self.ca = f, ca
+        return f[rc(p.shape[0]-1, q.shape[0]-1)]
 
 
 @jit(nopython=True)
@@ -392,6 +404,13 @@ def haversine(p: np.ndarray,
     return meters
 
 
+def print_sparse_matrix(d: Dict):
+    for key, value in d.items():
+        col = key & ((1 << 32) - 1)
+        row = key >> 32
+        print("({0},{1}): {2}".format(row, col, value))
+
+
 def main():
     np.set_printoptions(precision=4)
 
@@ -413,8 +432,8 @@ def main():
                   [8.9, 0.6]])
     print(frechet.distance(p, q))
 
-    print(frechet.ca)
-    print(frechet.f)
+    print_sparse_matrix(frechet.ca)
+    print_sparse_matrix(frechet.f)
 
 
 if __name__ == "__main__":
