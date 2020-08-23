@@ -4,12 +4,13 @@ import math
 from typing import Callable, Dict
 from numba import jit, types
 from numba import typed
+from timeit import default_timer as timer
 
 
-class NaiveFrechet(object):
+class DiscreteFrechet(object):
     """
     Calculates the discrete Fréchet distance between two poly-lines using the
-    naive recursive algorithm
+    original recursive algorithm
     """
 
     def __init__(self, dist_func):
@@ -38,10 +39,8 @@ class NaiveFrechet(object):
             :return: Distance value
             """
             if self.ca[i, j] > -1.0:
-                # print(i, j, "*")
                 return self.ca[i, j]
 
-            # print(i, j)
             d = self.dist_func(p[i], q[j])
             if i == 0 and j == 0:
                 self.ca[i, j] = d
@@ -91,10 +90,13 @@ def get_linear_frechet(p: np.ndarray, q: np.ndarray,
     return ca
 
 
-class LinearFrechet(NaiveFrechet):
+class LinearDiscreteFrechet(DiscreteFrechet):
 
     def __init__(self, dist_func):
-        NaiveFrechet.__init__(self, dist_func)
+        DiscreteFrechet.__init__(self, dist_func)
+        # JIT the numba code
+        self.distance(np.array([[0.0, 0.0], [1.0, 1.0]]),
+                      np.array([[0.0, 0.0], [1.0, 1.0]]))
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
         n_p = p.shape[0]
@@ -117,10 +119,10 @@ def distance_matrix(p: np.ndarray,
     return dist
 
 
-class VectorizedNaiveFrechet(NaiveFrechet):
+class VectorizedDiscreteFrechet(DiscreteFrechet):
 
     def __init__(self, dist_func):
-        NaiveFrechet.__init__(self, dist_func)
+        DiscreteFrechet.__init__(self, dist_func)
         self.dist = np.array([0.0])
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
@@ -248,51 +250,49 @@ def get_rc(a: Dict, row: types.int64, col: types.int64,
 @jit(nopython=True)
 def fast_distance_matrix(p: np.ndarray,
                          q: np.ndarray,
+                         diag: np.ndarray,
                          dist_func: Callable[[np.array, np.array], float]):
     # \
     #     -> (types.DictType, np.ndarray):
-    n_p = p.shape[0]
-    n_q = q.shape[0]
-    bp = bresenham_pairs(0, 0, n_p, n_q)
-    n_bp = bp.shape[0]
-
-    epq = np.zeros(n_bp)
-    for i in range(n_bp):
-        epq[i] = dist_func(p[bp[i, 0]], q[bp[i, 1]])
-    diag_max = epq.max()
+    n_diag = diag.shape[0]
+    diag_max = 0.0
+    i_min = 0
+    j_min = 0
 
     # Create the distance array
-    # dist = np.zeros((n_p, n_q), dtype=np.float64)
-    # dist.fill(-1.0)
     dist = typed.Dict.empty(key_type=types.int64, value_type=types.float64)
 
     # Fill in the diagonal with the seed distance values
-    for i in range(bp.shape[0]):
-        dist[rc(bp[i][0], bp[i][1])] = epq[i]
+    for i in range(n_diag):
+        d = dist_func(p[diag[i, 0]], q[diag[i, 1]])
+        diag_max = max(diag_max, d)
+        dist[rc(diag[i][0], diag[i][1])] = d
 
-    for k in range(n_bp - 1):
-        ij = bp[k]
+    for k in range(n_diag - 1):
+        ij = diag[k]
         i0 = ij[0]
         j0 = ij[1]
 
-        for i in range(i0 + 1, n_p):
+        for i in range(i0 + 1, p.shape[0]):
             kk = rc(i, j0)
             if kk not in dist:
                 d = dist_func(p[i], q[j0])
-                if d < diag_max:
+                if d < diag_max or i < i_min:
                     dist[kk] = d
                 else:
                     break
+        i_min = i
 
-        for j in range(j0 + 1, n_q):
+        for j in range(j0 + 1, q.shape[0]):
             kk = rc(i0, j)
             if kk not in dist:
                 d = dist_func(p[i0], q[j])
-                if d < diag_max:
+                if d < diag_max or j < j_min:
                     dist[kk] = d
                 else:
                     break
-    return dist, bp
+        j_min = j
+    return dist
 
 
 @jit(nopython=True)
@@ -316,18 +316,19 @@ def get_corner_min(dist, i: int, j: int) -> float:
 
 @jit(nopython=True)
 def fast_frechet_matrix(dist,
-                        bp: np.ndarray,
+                        diag: np.ndarray,
                         p: np.ndarray,
                         q: np.ndarray):
-    f = typed.Dict.empty(key_type=types.int64, value_type=types.float64)
+    f = typed.Dict.empty(key_type=types.int64,
+                         value_type=types.float64)
     for key, value in dist.items():
         f[key] = value
 
     n_p = p.shape[0]
     n_q = q.shape[0]
 
-    for k in range(bp.shape[0]):
-        ij = bp[k]
+    for k in range(diag.shape[0]):
+        ij = diag[k]
         i0 = ij[0]
         j0 = ij[1]
 
@@ -349,7 +350,7 @@ def fast_frechet_matrix(dist,
     return f
 
 
-class FastFrechet(object):
+class FastDiscreteFrechet(object):
 
     def __init__(self, dist_func):
         """
@@ -363,10 +364,14 @@ class FastFrechet(object):
                                    value_type=types.float64)
         self.f = typed.Dict.empty(key_type=types.int64,
                                   value_type=types.float64)
+        # JIT the numba code
+        self.distance(np.array([[0.0, 0.0], [1.0, 1.0]]),
+                      np.array([[0.0, 0.0], [1.0, 1.0]]))
 
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
-        ca, bp = fast_distance_matrix(p, q, self.dist_func)
-        f = fast_frechet_matrix(ca, bp, p, q)
+        diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
+        ca = fast_distance_matrix(p, q, diagonal, self.dist_func)
+        f = fast_frechet_matrix(ca, diagonal, p, q)
         self.f, self.ca = f, ca
         return f[rc(p.shape[0]-1, q.shape[0]-1)]
 
@@ -374,7 +379,7 @@ class FastFrechet(object):
 @jit(nopython=True)
 def euclidean(p: np.ndarray, q: np.ndarray) -> float:
     d = p - q
-    return math.sqrt(d[0] ** 2 + d[1] ** 2)
+    return math.sqrt(np.dot(d, d))
 
 
 @jit(nopython=True)
@@ -414,7 +419,10 @@ def print_sparse_matrix(d: Dict):
 def main():
     np.set_printoptions(precision=4)
 
-    frechet = FastFrechet(euclidean)
+    fast_frechet = FastDiscreteFrechet(euclidean)
+    linear_frechet = LinearDiscreteFrechet(euclidean)
+    slow_frechet = DiscreteFrechet(euclidean)
+
     p = np.array([[0.2, 2.0],
                   [1.5, 2.8],
                   [2.3, 1.6],
@@ -430,10 +438,41 @@ def main():
                   [6.5, 2.8],
                   [7.0, 0.8],
                   [8.9, 0.6]])
-    print(frechet.distance(p, q))
 
-    print_sparse_matrix(frechet.ca)
-    print_sparse_matrix(frechet.f)
+    d = np.zeros((p.shape[0], q.shape[0]))
+    for i in range(p.shape[0]):
+        for j in range(q.shape[0]):
+            d[i, j] = euclidean(p[i], q[j])
+
+    start = timer()
+    distance = slow_frechet.distance(p, q)
+    end = timer()
+    slow_time = end - start
+    print("Slow : {}".format(slow_time))
+    print(distance)
+
+    start = timer()
+    distance = linear_frechet.distance(p, q)
+    end = timer()
+    linear_time = end - start
+    print("Linear : {}".format(linear_time))
+    print(distance)
+
+    start = timer()
+    distance = fast_frechet.distance(p, q)
+    end = timer()
+    fast_time = end - start
+    print("Fast : {}".format(fast_time))
+    print(distance)
+
+    print("")
+    print("{} times faster than slow".format(slow_time / fast_time))
+    print("{} times faster than linear".format(linear_time / fast_time))
+
+    # print(frechet.distance(p, q))
+    #
+    # print_sparse_matrix(frechet.ca)
+    # print_sparse_matrix(frechet.f)
 
 
 if __name__ == "__main__":
