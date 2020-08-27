@@ -296,18 +296,17 @@ def fast_distance_matrix(p: np.ndarray,
 
 
 @jit(nopython=True)
-def get_corner_min(dist, i: int, j: int) -> float:
+def get_corner_min(f_mat: np.ndarray, i: int, j: int) -> float:
     if i == 0 and j == 0:
-        a = np.array([get_rc(dist, i, j)])
+        a = np.array([get_rc(f_mat, i, j)])
     elif i == 0:
-        a = np.array([get_rc(dist, i, j-1)])
+        a = np.array([get_rc(f_mat, i, j - 1)])
     elif j == 0:
-        a = np.array([get_rc(dist, i-1, j)])
+        a = np.array([get_rc(f_mat, i - 1, j)])
     else:
-        a = np.array([get_rc(dist, i-1, j-1), get_rc(dist, i, j-1),
-                      get_rc(dist, i-1, j)])
+        a = np.array([get_rc(f_mat, i - 1, j - 1), get_rc(f_mat, i, j - 1),
+                      get_rc(f_mat, i - 1, j)])
 
-        # Replace np.place(a, a == -1, np.inf)
         for i in range(a.shape[0]):
             if a[i] == -1:
                 a[i] = np.inf
@@ -319,10 +318,10 @@ def fast_frechet_matrix(dist,
                         diag: np.ndarray,
                         p: np.ndarray,
                         q: np.ndarray):
-    f = typed.Dict.empty(key_type=types.int64,
-                         value_type=types.float64)
+    f_mat = typed.Dict.empty(key_type=types.int64,
+                             value_type=types.float64)
     for key, value in dist.items():
-        f[key] = value
+        f_mat[key] = value
 
     n_p = p.shape[0]
     n_q = q.shape[0]
@@ -336,18 +335,19 @@ def fast_frechet_matrix(dist,
             kk = rc(i, j0)
             if kk in dist:
                 d = dist[kk]
-                f[kk] = max(d, get_corner_min(f, i, j0))
+                f_mat[kk] = max(d, get_corner_min(f_mat, i, j0))
             else:
                 break
 
-        for j in range(j0, n_q):
+        # Add 1 to j0 to avoid recalculating the diagonal
+        for j in range(j0 + 1, n_q):
             kk = rc(i0, j)
             if kk in dist:
                 d = dist[kk]
-                f[kk] = max(d, get_corner_min(f, i0, j))
+                f_mat[kk] = max(d, get_corner_min(f_mat, i0, j))
             else:
                 break
-    return f
+    return f_mat
 
 
 class FastDiscreteFrechet(object):
@@ -387,26 +387,30 @@ def haversine(p: np.ndarray,
               q: np.ndarray) -> float:
     """
     Vectorized haversine distance calculation
+    :p: Initial location in radians
+    :q: Final location in radians
+    :return: Distance
+    """
+    d_lon = q[1] - p[1]
+    d_lat = p[1] - p[0]
+
+    a = math.sin(d_lat/2.0)**2 + math.cos(p[0]) * math.cos(q[0]) \
+        * math.sin(d_lon/2.0)**2
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return c
+
+
+@jit(nopython=True)
+def earth_haversine(p: np.ndarray, q: np.ndarray) -> float:
+    """
+    Vectorized haversine distance calculation
     :p: Initial location in degrees [lat, lon]
     :q: Final location in degrees [lat, lon]
     :return: Distances in meters
     """
     earth_radius = 6378137.0
-
-    rad_lat1 = math.radians(p[0])
-    rad_lon1 = math.radians(p[1])
-    rad_lat2 = math.radians(q[0])
-    rad_lon2 = math.radians(q[1])
-
-    d_lon = rad_lon2 - rad_lon1
-    d_lat = rad_lat2 - rad_lat1
-
-    a = math.sin(d_lat/2.0)**2 + math.cos(rad_lat1) * math.cos(rad_lat2) \
-        * math.sin(d_lon/2.0)**2
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-    meters = earth_radius * c
-    return meters
+    return haversine(np.radians(p), np.radians(q)) * earth_radius
 
 
 def print_sparse_matrix(d: Dict):
@@ -439,10 +443,10 @@ def main():
                   [7.0, 0.8],
                   [8.9, 0.6]])
 
-    d = np.zeros((p.shape[0], q.shape[0]))
-    for i in range(p.shape[0]):
-        for j in range(q.shape[0]):
-            d[i, j] = euclidean(p[i], q[j])
+    # d = np.zeros((p.shape[0], q.shape[0]))
+    # for i in range(p.shape[0]):
+    #     for j in range(q.shape[0]):
+    #         d[i, j] = euclidean(p[i], q[j])
 
     start = timer()
     distance = slow_frechet.distance(p, q)
@@ -471,8 +475,8 @@ def main():
 
     # print(frechet.distance(p, q))
     #
-    # print_sparse_matrix(frechet.ca)
-    # print_sparse_matrix(frechet.f)
+    # print_sparse_matrix(fast_frechet.ca)
+    print_sparse_matrix(fast_frechet.f)
 
 
 if __name__ == "__main__":

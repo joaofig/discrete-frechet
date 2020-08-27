@@ -21,7 +21,7 @@ json5==0.9.5
 jsonschema==3.2.0
 jupyter-client==6.1.6
 jupyter-core==4.6.3
-jupyterlab==2.2.5
+jupyterlab==2.2.6
 jupyterlab-server==1.2.0
 kiwisolver==1.2.0
 llvmlite==0.34.0
@@ -37,7 +37,7 @@ numpy==1.19.1
 packaging==20.4
 pandas==1.1.1
 pandocfilters==1.4.2
-parso==0.8.0
+parso==0.7.1
 pexpect==4.8.0
 pickleshare==0.7.5
 Pillow==7.2.0
