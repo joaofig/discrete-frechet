@@ -191,16 +191,15 @@ def bresenham_pairs(x0: int, y0: int,
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
     dim = max(dx, dy)
-    i = 0
-    pairs = np.zeros((dim, 2), dtype=np.int32)
+    pairs = np.zeros((dim, 2), dtype=np.int64)
     x, y = x0, y0
     sx = -1 if x0 > x1 else 1
     sy = -1 if y0 > y1 else 1
     if dx > dy:
         err = dx // 2
-        while x != x1:
-            pairs[i] = np.array([x, y])
-            i += 1
+        for i in range(dx):
+            pairs[i, 0] = x
+            pairs[i, 1] = y
             err -= dy
             if err < 0:
                 y += sy
@@ -208,9 +207,9 @@ def bresenham_pairs(x0: int, y0: int,
             x += sx
     else:
         err = dy // 2
-        while y != y1:
-            pairs[i] = np.array([x, y])
-            i += 1
+        for i in range(dy):
+            pairs[i, 0] = x
+            pairs[i, 1] = y
             err -= dx
             if err < 0:
                 x += sx
@@ -219,64 +218,53 @@ def bresenham_pairs(x0: int, y0: int,
     return pairs
 
 
-@jit(nopython=True)
-def pairwise_distance(p: np.ndarray,
-                      q: np.ndarray,
-                      bp: np.ndarray,
-                      dist_func: Callable[[np.array, np.array], float]) \
-        -> np.ndarray:
-    n = bp.shape[0]
-    dist = np.zeros(n)
-    for i in range(n):
-        dist[i] = dist_func(p[bp[i, 0]], q[bp[i, 1]])
-    return dist
-
-
-@jit(nopython=True)
-def rc(row: types.int64, col: types.int64) -> types.int64:
-    return (row << 32) + col
+# @jit(nopython=True)
+# def rc(row: types.int64, col: types.int64) -> types.int64:
+#     return (row << 32) + col
 
 
 @jit(nopython=True)
 def get_rc(a: Dict, row: types.int64, col: types.int64,
            d: types.float64 = np.inf) -> types.float64:
-    kk = rc(row, col)
+    kk = (row, col)
     if kk in a:
         return a[kk]
     else:
         return d
 
 
-@jit(nopython=True)
+@jit(nopython=True, fastmath=True)
 def fast_distance_matrix(p: np.ndarray,
                          q: np.ndarray,
                          diag: np.ndarray,
-                         dist_func: Callable[[np.array, np.array], float]):
-    # \
-    #     -> (types.DictType, np.ndarray):
+                         dist_func: Callable[[np.array, np.array], float]) -> np.ndarray:
     n_diag = diag.shape[0]
     diag_max = 0.0
     i_min = 0
     j_min = 0
 
     # Create the distance array
-    dist = typed.Dict.empty(key_type=types.int64, value_type=types.float64)
+    dist = dict()  # typed.Dict.empty(key_type=types.int64, value_type=types.float64)
 
     # Fill in the diagonal with the seed distance values
     for i in range(n_diag):
-        d = dist_func(p[diag[i, 0]], q[diag[i, 1]])
+        di = diag[i, 0]
+        dj = diag[i, 1]
+        d = dist_func(p[di], q[dj])
         diag_max = max(diag_max, d)
-        dist[rc(diag[i][0], diag[i][1])] = d
+        dist[(di, dj)] = d
 
     for k in range(n_diag - 1):
-        ij = diag[k]
-        i0 = ij[0]
-        j0 = ij[1]
+        i0 = diag[k, 0]
+        j0 = diag[k, 1]
+
+        p_i0 = p[i0]
+        q_j0 = q[j0]
 
         for i in range(i0 + 1, p.shape[0]):
-            kk = rc(i, j0)
+            kk = (i, j0)
             if kk not in dist:
-                d = dist_func(p[i], q[j0])
+                d = dist_func(p[i], q_j0)
                 if d < diag_max or i < i_min:
                     dist[kk] = d
                 else:
@@ -284,9 +272,9 @@ def fast_distance_matrix(p: np.ndarray,
         i_min = i
 
         for j in range(j0 + 1, q.shape[0]):
-            kk = rc(i0, j)
+            kk = (i0, j)
             if kk not in dist:
-                d = dist_func(p[i0], q[j])
+                d = dist_func(p_i0, q[j])
                 if d < diag_max or j < j_min:
                     dist[kk] = d
                 else:
@@ -295,22 +283,19 @@ def fast_distance_matrix(p: np.ndarray,
     return dist
 
 
-@jit(nopython=True)
+@jit(nopython=True, fastmath=True)
 def get_corner_min(f_mat: np.ndarray, i: int, j: int) -> float:
-    if i == 0 and j == 0:
-        a = np.array([get_rc(f_mat, i, j)])
+    if i > 0 and j > 0:
+        a = min(get_rc(f_mat, i - 1, j - 1),
+                get_rc(f_mat, i, j - 1),
+                get_rc(f_mat, i - 1, j))
+    elif i == 0 and j == 0:
+        a = f_mat[(i, j)]
     elif i == 0:
-        a = np.array([get_rc(f_mat, i, j - 1)])
-    elif j == 0:
-        a = np.array([get_rc(f_mat, i - 1, j)])
-    else:
-        a = np.array([get_rc(f_mat, i - 1, j - 1), get_rc(f_mat, i, j - 1),
-                      get_rc(f_mat, i - 1, j)])
-
-        for i in range(a.shape[0]):
-            if a[i] == -1:
-                a[i] = np.inf
-    return a.min()
+        a = f_mat[(i, j - 1)]
+    else:  # j == 0:
+        a = f_mat[(i - 1, j)]
+    return a
 
 
 @jit(nopython=True)
@@ -318,36 +303,30 @@ def fast_frechet_matrix(dist,
                         diag: np.ndarray,
                         p: np.ndarray,
                         q: np.ndarray):
-    f_mat = typed.Dict.empty(key_type=types.int64,
-                             value_type=types.float64)
-    for key, value in dist.items():
-        f_mat[key] = value
-
-    n_p = p.shape[0]
-    n_q = q.shape[0]
 
     for k in range(diag.shape[0]):
-        ij = diag[k]
-        i0 = ij[0]
-        j0 = ij[1]
+        i0 = diag[k, 0]
+        j0 = diag[k, 1]
 
-        for i in range(i0, n_p):
-            kk = rc(i, j0)
+        for i in range(i0, p.shape[0]):
+            kk = (i, j0)
             if kk in dist:
-                d = dist[kk]
-                f_mat[kk] = max(d, get_corner_min(f_mat, i, j0))
+                c = get_corner_min(dist, i, j0)
+                if c > dist[kk]:
+                    dist[kk] = c
             else:
                 break
 
         # Add 1 to j0 to avoid recalculating the diagonal
-        for j in range(j0 + 1, n_q):
-            kk = rc(i0, j)
+        for j in range(j0 + 1, q.shape[0]):
+            kk = (i0, j)
             if kk in dist:
-                d = dist[kk]
-                f_mat[kk] = max(d, get_corner_min(f_mat, i0, j))
+                c = get_corner_min(dist, i0, j)
+                if c > dist[kk]:
+                    dist[kk] = c
             else:
                 break
-    return f_mat
+    return dist
 
 
 class FastDiscreteFrechet(object):
@@ -362,8 +341,6 @@ class FastDiscreteFrechet(object):
         self.dist_func = dist_func
         self.ca = typed.Dict.empty(key_type=types.int64,
                                    value_type=types.float64)
-        self.f = typed.Dict.empty(key_type=types.int64,
-                                  value_type=types.float64)
         # JIT the numba code
         self.distance(np.array([[0.0, 0.0], [1.0, 1.0]]),
                       np.array([[0.0, 0.0], [1.0, 1.0]]))
@@ -371,9 +348,9 @@ class FastDiscreteFrechet(object):
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
         diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
         ca = fast_distance_matrix(p, q, diagonal, self.dist_func)
-        f = fast_frechet_matrix(ca, diagonal, p, q)
-        self.f, self.ca = f, ca
-        return f[rc(p.shape[0]-1, q.shape[0]-1)]
+        ca = fast_frechet_matrix(ca, diagonal, p, q)
+        self.ca = ca
+        return ca[(p.shape[0]-1, q.shape[0]-1)]
 
 
 @jit(nopython=True)
@@ -476,7 +453,7 @@ def main():
     # print(frechet.distance(p, q))
     #
     # print_sparse_matrix(fast_frechet.ca)
-    print_sparse_matrix(fast_frechet.f)
+    # print_sparse_matrix(fast_frechet.f)
 
 
 if __name__ == "__main__":
