@@ -168,8 +168,8 @@ class VectorizedDiscreteFrechet(DiscreteFrechet):
 
 
 @jit(nopython=True)
-def bresenham_pairs(x0: int, y0: int,
-                    x1: int, y1: int) -> np.ndarray:
+def _bresenham_pairs(x0: int, y0: int,
+                     x1: int, y1: int) -> np.ndarray:
     """Generates the diagonal coordinates
 
     Parameters
@@ -427,7 +427,7 @@ def _fast_frechet_matrix(dist: np.ndarray,
 def _fdfd_sparse(p: np.ndarray,
                  q: np.ndarray,
                  dist_func: Callable[[np.array, np.array], float]) -> float:
-    diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
+    diagonal = _bresenham_pairs(0, 0, p.shape[0], q.shape[0])
     ca = _fast_distance_sparse(p, q, diagonal, dist_func)
     ca = _fast_frechet_sparse(ca, diagonal, p, q)
     return ca
@@ -437,7 +437,7 @@ def _fdfd_sparse(p: np.ndarray,
 def _fdfd_matrix(p: np.ndarray,
                  q: np.ndarray,
                  dist_func: Callable[[np.array, np.array], float]) -> float:
-    diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
+    diagonal = _bresenham_pairs(0, 0, p.shape[0], q.shape[0])
     ca = _fast_distance_matrix(p, q, diagonal, dist_func)
     ca = _fast_frechet_matrix(ca, diagonal, p, q)
     return ca
@@ -462,7 +462,7 @@ class FastDiscreteFrechetSparse(object):
 
     def timed_distance(self, p: np.ndarray, q: np.ndarray) -> float:
         start = timer()
-        diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
+        diagonal = _bresenham_pairs(0, 0, p.shape[0], q.shape[0])
         self.times.append(timer() - start)
 
         start = timer()
@@ -500,7 +500,7 @@ class FastDiscreteFrechetMatrix(object):
 
     def timed_distance(self, p: np.ndarray, q: np.ndarray) -> float:
         start = timer()
-        diagonal = bresenham_pairs(0, 0, p.shape[0], q.shape[0])
+        diagonal = _bresenham_pairs(0, 0, p.shape[0], q.shape[0])
         self.times.append(timer() - start)
 
         start = timer()
