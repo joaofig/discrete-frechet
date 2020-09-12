@@ -14,3 +14,31 @@ discrete Fréchet calculation.
 [How long should your dog leash be?](https://medium.com/tblx-insider/how-long-should-your-dog-leash-be-ba5a4e6891fc)
 
 
+## Using the Code
+The DFD classes live in the `distances` package. They are:
+- `DiscreteFrechet`: The classic dynamic programming implementation
+using recursion and a NumPy array to store the distance data.
+- `LinarDiscreteFrechet`: The linearized implementation of the
+previous algorithm avoiding recursion.
+- `FastDiscreteFrechetSparse`: Implements the improved algorithm
+and uses a sparse array to store the distance data. The sparse
+array iss implemented as a dictionary.
+- `FastDiscreteFrechetMatrix`: Same as above but uses a full-sized
+NumPy array to store the distance data. This is the fastest 
+implementation of all.
+
+To use the code, select the class to instantiate and initialize it 
+with one of the following distance functions:
+- `euclidean`: Standard euclidean distance
+- `haversine`: Haversine distance on a unit sphere
+- `earth_haversine`: Calculates the haversine distance on the
+Eaarth's surface in meters
+
+All distance functions take the point parameters as NumPy arrays
+and return the distance as a single float. The haversine distance
+functions reverse the parameter indexing order. Instad of (x, y), 
+they take (lat, lon). The `hearth_haversine` function takes its
+inputs in decimal degrees.
+
+Use the `distance` function of your selected class to calculate
+the DFD.
