@@ -32,7 +32,7 @@ with one of the following distance functions:
 - `euclidean`: Standard euclidean distance
 - `haversine`: Haversine distance on a unit sphere
 - `earth_haversine`: Calculates the haversine distance on the
-Eaarth's surface in meters
+Earth's surface in meters
 
 All distance functions take the point parameters as NumPy arrays
 and return the distance as a single float. The haversine distance
