@@ -2,7 +2,7 @@ import numpy as np
 import math
 
 from typing import Callable, Dict
-from numba import jit, types, prange
+from numba import jit, types, prange, int32, int64
 from numba import typed
 from timeit import default_timer as timer
 
@@ -218,8 +218,8 @@ def _bresenham_pairs(x0: int, y0: int,
     return pairs
 
 
-@jit(nopython=True)
-def rc(row: types.int64, col: types.int64) -> types.int64:
+@jit(int64(int32, int32), nopython=True)
+def rc(row: types.int32, col: types.int32) -> types.int64:
     return (row << 32) + col
 
 
@@ -295,17 +295,25 @@ def _fast_distance_sparse(p: np.ndarray,
         q_j0 = q[j0]
 
         for i in range(i0 + 1, p_count):
-            d = dist_func(p[i], q_j0)
-            if d < diag_max or i < i_min:
-                dist[rc(i, j0)] = d
+            key = rc(i, j0)
+            if key not in dist:
+                d = dist_func(p[i], q_j0)
+                if d < diag_max or i < i_min:
+                    dist[key] = d
+                else:
+                    break
             else:
                 break
         i_min = i
 
         for j in range(j0 + 1, q_count):
-            d = dist_func(p_i0, q[j])
-            if d < diag_max or j < j_min:
-                dist[rc(i0, j)] = d
+            key = rc(i0, j)
+            if key not in dist:
+                d = dist_func(p_i0, q[j])
+                if d < diag_max or j < j_min:
+                    dist[key] = d
+                else:
+                    break
             else:
                 break
         j_min = j
@@ -335,7 +343,6 @@ def _fast_distance_matrix(p, q, diag, dist_func):
     for k in range(n_diag - 1):
         i0 = diag[k, 0]
         j0 = diag[k, 1]
-
         p_i0 = p[i0]
         q_j0 = q[j0]
 
@@ -374,21 +381,21 @@ def _fast_frechet_sparse(dist,
         j0 = diag[k, 1]
 
         for i in range(i0, p.shape[0]):
-            kk = rc(i, j0)
-            if kk in dist:
+            key = rc(i, j0)
+            if key in dist:
                 c = _get_corner_min_sparse(dist, i, j0)
-                if c > dist[kk]:
-                    dist[kk] = c
+                if c > dist[key]:
+                    dist[key] = c
             else:
                 break
 
         # Add 1 to j0 to avoid recalculating the diagonal
         for j in range(j0 + 1, q.shape[0]):
-            kk = rc(i0, j)
-            if kk in dist:
+            key = rc(i0, j)
+            if key in dist:
                 c = _get_corner_min_sparse(dist, i0, j)
-                if c > dist[kk]:
-                    dist[kk] = c
+                if c > dist[key]:
+                    dist[key] = c
             else:
                 break
     return dist
@@ -535,11 +542,9 @@ def haversine(p: np.ndarray,
     :q: Final location in radians
     :return: Distance
     """
-    d_lon = q[1] - p[1]
-    d_lat = p[1] - p[0]
-
-    a = math.sin(d_lat/2.0)**2 + math.cos(p[0]) * math.cos(q[0]) \
-        * math.sin(d_lon/2.0)**2
+    d = q - p
+    a = math.sin(d[0]/2.0)**2 + math.cos(p[0]) * math.cos(q[0]) \
+        * math.sin(d[1]/2.0)**2
 
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return c
@@ -568,6 +573,7 @@ def main():
     np.set_printoptions(precision=4)
 
     fast_frechet = FastDiscreteFrechetMatrix(euclidean)
+    sparse_frechet = FastDiscreteFrechetSparse(euclidean)
     linear_frechet = LinearDiscreteFrechet(euclidean)
     slow_frechet = DiscreteFrechet(euclidean)
 
@@ -607,6 +613,13 @@ def main():
     print(distance)
 
     start = timer()
+    distance = sparse_frechet.distance(p, q)
+    end = timer()
+    fast_time = end - start
+    print("Sparse : {}".format(fast_time))
+    print(distance)
+
+    start = timer()
     distance = fast_frechet.distance(p, q)
     end = timer()
     fast_time = end - start
@@ -616,6 +629,17 @@ def main():
     print("")
     print("{} times faster than slow".format(slow_time / fast_time))
     print("{} times faster than linear".format(linear_time / fast_time))
+
+    print("---------")
+
+    sparse_frechet.timed_distance(p, q)
+
+    sparse_frechet.times = []
+    sparse_frechet.timed_distance(p, q)
+
+    print(sparse_frechet.times)
+
+    print("---------")
 
     fast_frechet.timed_distance(p, q)
 
