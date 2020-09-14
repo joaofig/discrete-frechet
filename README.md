@@ -6,8 +6,8 @@ approach to high-speed and memory-efficient optimizations.
 The discrete Fréchet distance measures the similarity between two 
 polygonal curves or polylines. 
 
-This repository contains three different implementations of the 
-discrete Fréchet calculation.
+This repository contains four different implementations of the 
+discrete Fréchet distance calculation.
 
 # Medium Articles
 
