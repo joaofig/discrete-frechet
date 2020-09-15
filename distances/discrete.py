@@ -64,8 +64,8 @@ class DiscreteFrechet(object):
 
 
 @jit(nopython=True)
-def get_linear_frechet(p: np.ndarray, q: np.ndarray,
-                       dist_func: Callable[[np.ndarray, np.ndarray], float]) \
+def _get_linear_frechet(p: np.ndarray, q: np.ndarray,
+                        dist_func: Callable[[np.ndarray, np.ndarray], float]) \
         -> np.ndarray:
     n_p = p.shape[0]
     n_q = q.shape[0]
@@ -101,7 +101,7 @@ class LinearDiscreteFrechet(DiscreteFrechet):
     def distance(self, p: np.ndarray, q: np.ndarray) -> float:
         n_p = p.shape[0]
         n_q = q.shape[0]
-        self.ca = get_linear_frechet(p, q, self.dist_func)
+        self.ca = _get_linear_frechet(p, q, self.dist_func)
         return self.ca[n_p - 1, n_q - 1]
 
 

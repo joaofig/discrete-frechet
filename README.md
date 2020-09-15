@@ -13,6 +13,8 @@ discrete Fréchet distance calculation.
 
 [How long should your dog leash be?](https://medium.com/tblx-insider/how-long-should-your-dog-leash-be-ba5a4e6891fc)
 
+[Fast Discrete Fréchet Distance](https://towardsdatascience.com/fast-discrete-fr%C3%A9chet-distance-d6b422a8fb77)
+
 
 ## Using the Code
 The DFD classes live in the `distances` package. They are:
