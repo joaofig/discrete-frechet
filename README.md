@@ -24,7 +24,7 @@ using recursion and a NumPy array to store the distance data.
 previous algorithm avoiding recursion.
 - `FastDiscreteFrechetSparse`: Implements the improved algorithm
 and uses a sparse array to store the distance data. The sparse
-array iss implemented as a dictionary.
+array is implemented as a dictionary.
 - `FastDiscreteFrechetMatrix`: Same as above but uses a full-sized
 NumPy array to store the distance data. This is the fastest 
 implementation of all.
@@ -38,7 +38,7 @@ Earth's surface in meters
 
 All distance functions take the point parameters as NumPy arrays
 and return the distance as a single float. The haversine distance
-functions reverse the parameter indexing order. Instad of (x, y), 
+functions reverse the parameter indexing order. Instead of (x, y), 
 they take (lat, lon). The `hearth_haversine` function takes its
 inputs in decimal degrees.
 
