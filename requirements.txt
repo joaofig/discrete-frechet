@@ -58,7 +58,7 @@ python-dateutil==2.8.1
 pytz==2020.1
 pyzmq==19.0.2
 requests==2.31.0
-scipy==1.5.2
+scipy==1.10.0
 Send2Trash==1.5.0
 six==1.15.0
 terminado==0.8.3
