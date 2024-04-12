@@ -12,7 +12,7 @@ decorator==4.4.2
 defusedxml==0.6.0
 entrypoints==0.3
 icc-rt==2019.0
-idna==2.10
+idna==3.7
 importlib-metadata==1.7.0
 intel-openmp==2019.0
 ipykernel==5.3.4
