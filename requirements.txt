@@ -68,4 +68,4 @@ traitlets==5.0.4
 urllib3==1.26.19
 wcwidth==0.2.5
 webencodings==0.5.1
-zipp==3.1.0
+zipp==3.19.1
